@@ -1,0 +1,134 @@
+# ============================================================
+# Configuration complète — GNN + GRU + k-WTA + Pooling
+# ============================================================
+
+experiment:
+  name: seizure_kwta_experiment
+  output_dir: results_grid_search_topkmean_20_10_burst
+  seed: 42
+  device: auto               # "cuda", "cpu", ou "auto"
+  if_exists: skip            # "skip" ou "overwrite"
+
+# ------------------------------------------------------------
+# Données
+# ------------------------------------------------------------
+data:
+  splits_all_train: splits/splits_trainonall_L10_S1.json
+  fold_idx: 0
+  num_workers: 0
+  pin_memory: false
+  batch_size: 8
+
+# ------------------------------------------------------------
+# Modèle
+# ------------------------------------------------------------
+model:
+  in_dim: auto
+  hid: 64
+
+  # --- k-WTA persistante ---
+  k_max_ratio: 1.0
+  k_max_fixed: null
+  k_new_ratio: 1.0
+  k_new_fixed: null
+  alpha_stay: 0.0
+  abs_min: 0.0
+
+  # --- Pooling global ---
+  pooling_mode: topk_mean      # mean | max | att_mean | active_mean | topk_mean | noisy_or
+  k_ratio: 0.2                 # utilisé pour topk_mean
+
+# ------------------------------------------------------------
+# Entraînement
+# ------------------------------------------------------------
+train:
+  epochs: 50
+  batch_size: 8
+  lr: 1e-3
+  weight_decay: 0.0
+  grad_clip: 1.0
+  amp: true
+  ckpt_dir: checkpoints
+  if_exists: skip              # skip ou overwrite
+  splits: ["train"]
+  optimizer: adam
+
+
+  max_timesteps: 50          # tronquer les séquences temporelles
+  max_batches_per_epoch: 200 # limite de batches par epoch (pour le confort)
+# ------------------------------------------------------------
+# Évaluation
+# ------------------------------------------------------------
+eval:
+  mode: test_only              # test_only | one_per_seizure
+  batch_size: 1
+  smooth_W: 5
+  metrics: [bce, auroc]
+
+  onset:
+    method: adaptive           # adaptive | simple
+    simple:
+      thr: 0.5
+      min_stable: 3
+    adaptive:
+      pre_window: 20
+      k_sigma: 2.0
+      thr_abs_min: 0.55
+      thr_abs_max: 0.85
+      frac_of_range: 0.60
+      min_stable: 3
+      dmin: 0.02
+
+  results_subdir: results
+  save_series: true
+  series_format: [npz, csv]   # garde les deux pour NPZ + CSV
+  save_nodes: true
+  series_subdir: series
+  save_nodes_wide_csv: true   # <= ajoute ce flag pour écrire le CSV "large"
+# ------------------------------------------------------------
+# Patients à traiter
+# ------------------------------------------------------------
+run:
+  patients:
+    - CHUM::Patient_01
+    - CHUM::Patient_02
+    - CHUM::Patient_07
+    #- CHUM::Patient_09
+    - CHUM::Patient_11
+    - CHUM::Patient_14
+    #- CHUM::Patient_16
+    #- CHUM::Patient_17
+    #- CHUM::Patient_21
+    - CHUM::Patient_22
+    #- ds004100::sub-HUP070
+    - ds004100::sub-HUP074
+    #- ds004100::sub-HUP080
+    - ds004100::sub-HUP082
+    - ds004100::sub-HUP089
+    - ds004100::sub-HUP097
+    - ds004100::sub-HUP107
+    - ds004100::sub-HUP111
+    #- ds004100::sub-HUP112
+    #- ds004100::sub-HUP114
+    #- ds004100::sub-HUP123
+    - ds004100::sub-HUP126
+    - ds004100::sub-HUP130
+    #- ds004100::sub-HUP133
+    #- ds004100::sub-HUP138
+    - ds004100::sub-HUP141
+    - ds004100::sub-HUP144
+    - ds004100::sub-HUP148
+    - ds004100::sub-HUP150
+    #- ds004100::sub-HUP151
+    - ds004100::sub-HUP157
+    #- ds004100::sub-HUP162
+    #- ds004100::sub-HUP171
+    #- ds004100::sub-HUP172
+    - ds004100::sub-HUP173
+    - ds004100::sub-HUP180
+    #- ds004100::sub-HUP181
+    - ds004100::sub-HUP185
+    #- ds004100::sub-HUP187
+    #- ds004100::sub-HUP188
+
+
