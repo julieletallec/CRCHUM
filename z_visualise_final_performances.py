@@ -26,8 +26,8 @@ Exemple d'appel :
 
 uv run z_visualise_final_performances.py \
   --root /home/julieletallec/test/results_grid_search_kwta_20_10_burst \
-  --out figures_grid_search_kwta_20_10_burst_nozeroval \
-  --criterion AUC_group_mean \
+  --out figures_grid_search_kwta_20_10_burst_LASSO_0.03_postprocess \
+  --criterion AUC_group_mean\
   --mode max
 
 """
@@ -43,6 +43,10 @@ import seaborn as sns
 from matplotlib.ticker import MultipleLocator
 
 from sklearn.metrics import roc_auc_score
+
+
+
+big_exp_name = "classifier_experiments_augmented_balanced_LASSO_global_0.03_postprocess"
 
 # ----------------------------------------------------------
 # Utils : recherche des dossiers & couleur par patient
@@ -65,7 +69,7 @@ def patient_has_min_soz_electrodes_per_seizure(
     """
     pred_path = (
         root / results_dir_name
-        / "classifier_experiments_augmented_balanced_nozeroval"
+        / big_exp_name
         / exp_dir_name
         / "cv_val_predictions_ranked.csv"
     )
@@ -156,7 +160,7 @@ def plot_soz_rank_boxplot_points_colored_by_seizure(
         pred_path = (
             Path(root)
             / res_dir
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir
             / "cv_val_predictions_ranked.csv"
         )
@@ -323,7 +327,7 @@ def collect_best_model_per_patient(
         pred_path = (
             root_
             / results_dir_name
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir_name
             / "cv_val_predictions_ranked.csv"
         )
@@ -361,7 +365,7 @@ def collect_best_model_per_patient(
     best_per_patient = {}  # patient -> dict
 
     for results_dir in find_results_dirs(root):
-        clf_root = results_dir / "classifier_experiments_augmented_balanced_nozeroval"
+        clf_root = results_dir / big_exp_name
         if not clf_root.is_dir():
             continue
 
@@ -511,6 +515,8 @@ def make_boxplot_topk_metrics(df: pd.DataFrame, out_dir: Path, color_map, title:
     plt.title(title)
     plt.grid(axis="y", alpha=0.3)
     plt.xticks(rotation=0)
+    plt.ylim(0, 1)
+
 
     fig_path = out_dir / "boxplot_topk_metrics.png"
     plt.tight_layout()
@@ -571,6 +577,8 @@ def make_boxplot(df: pd.DataFrame, out_dir: Path, color_map,
 
     #plt.ylabel("Metric value")
     plt.title(title)
+    plt.ylim(0, 1)
+
     plt.grid(axis="y", alpha=0.3)
 
     fig_path = out_dir / "boxplot_confidence_gap.png"
@@ -608,7 +616,7 @@ def compute_first_soz_rank_and_counts(df_best: pd.DataFrame, root: Path) -> pd.D
         csv_path = (
             root
             / res_dir
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir
             / "cv_val_predictions_ranked.csv"
         )
@@ -692,7 +700,7 @@ def collect_first_soz_rank_for_best_models(root: Path, df_best: pd.DataFrame) ->
         pred_path = (
             root
             / res_dir
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir
             / "cv_val_predictions_ranked.csv"
         )
@@ -1371,7 +1379,7 @@ def compute_all_soz_rank_and_counts(df_best: pd.DataFrame, root: Path) -> pd.Dat
         csv_path = (
             root
             / res_dir
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir
             / "cv_val_predictions_ranked.csv"
         )
@@ -1702,7 +1710,7 @@ def plot_soz_rank_boxplot_points_colored_by_seizure_from_df_all(
         pred_path = (
             Path(root)
             / res_dir
-            / "classifier_experiments_augmented_balanced_nozeroval"
+            / big_exp_name
             / exp_dir
             / "cv_val_predictions_ranked.csv"
         )
@@ -1822,6 +1830,119 @@ def plot_soz_rank_boxplot_points_colored_by_seizure_from_df_all(
     print(f"[OK] SOZ rank boxplot saved -> {out_path}")
 
 
+from collections import Counter
+
+def collect_selected_features_for_best_models(
+    root: Path,
+    df_best: pd.DataFrame,
+    features_filename: str = "selected_features_GLOBAL.txt",
+) -> pd.DataFrame:
+    """
+    Pour chaque patient (best couple results_dir/experiment dans df_best),
+    lit selected_features_GLOBAL.txt et retourne:
+
+    - un DataFrame long: (patient, feature)
+    - + gère les fichiers manquants en warning
+    """
+    rows = []
+
+    for _, row in df_best.iterrows():
+        pat = str(row["patient"])
+        res_dir = str(row["results_dir"])
+        exp_dir = str(row["experiment"])
+
+        feat_path = (
+            root
+            / res_dir
+            / big_exp_name
+            / exp_dir
+            / features_filename
+        )
+
+        if not feat_path.is_file():
+            print(f"[WARN] Missing {features_filename} for {pat}: {feat_path}")
+            continue
+
+        try:
+            txt = feat_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            print(f"[WARN] Cannot read {feat_path}: {e}")
+            continue
+
+        feats = []
+        for line in txt.splitlines():
+            f = line.strip()
+            if not f:
+                continue
+            feats.append(f)
+
+        if not feats:
+            print(f"[WARN] Empty feature file for {pat}: {feat_path}")
+            continue
+
+        for f in feats:
+            rows.append({"patient": pat, "feature": f})
+
+    if not rows:
+        raise RuntimeError(
+            f"No selected features collected from {features_filename}. "
+            "Check paths / file names."
+        )
+
+    return pd.DataFrame(rows)
+
+
+def plot_selected_feature_frequencies(
+    df_feat_long: pd.DataFrame,
+    out_dir: Path,
+    title: str = "Selected feature frequency across patients (best model per patient)",
+    top_n: int | None = None,
+    rotate_xticks: int = 90,
+):
+    """
+    Plot: x = feature, y = number of patients whose best model selected it.
+    (On compte une feature AU MAX une fois par patient, même si répétée.)
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) dédoublonner (patient, feature) au cas où
+    df_u = df_feat_long.drop_duplicates(subset=["patient", "feature"]).copy()
+
+    # 2) compter
+    counts = (
+        df_u.groupby("feature")["patient"]
+            .nunique()
+            .sort_values(ascending=False)
+    )
+
+    if top_n is not None:
+        counts = counts.head(int(top_n))
+
+    df_plot = counts.reset_index()
+    df_plot.columns = ["feature", "count_patients"]
+
+    # 3) plot
+    plt.figure(figsize=(max(12, 0.35 * len(df_plot)), 5))
+    plt.bar(df_plot["feature"], df_plot["count_patients"])
+    plt.ylabel("Number of folds selecting the feature")
+    plt.xlabel("Feature")
+    plt.title(title)
+    plt.grid(axis="y", alpha=0.3)
+    plt.xticks(rotation=rotate_xticks, ha="right")
+    plt.tight_layout()
+
+    fig_path = out_dir / "barplot_selected_features_frequency.png"
+    plt.savefig(fig_path, dpi=200)
+    plt.close()
+    print(f"[OK] Feature frequency plot saved -> {fig_path}")
+
+    # optionnel: aussi un CSV
+    csv_path = out_dir / "selected_features_frequency.csv"
+    df_plot.to_csv(csv_path, index=False)
+    print(f"[OK] Feature frequency table saved -> {csv_path}")
+
+
 
 # ----------------------------------------------------------
 # MAIN
@@ -1929,6 +2050,27 @@ def main():
     print(f"[OK] BCE (séquence du milieu seulement) sauvegardée -> {bce_csv}")
 
     plot_bce_boxplot_per_patient(df_bce, out_dir, color_map)
+
+
+    # ------------------------------------------------------
+    #  FEATURES: fréquence des features sélectionnées
+    # ------------------------------------------------------
+    df_feat_long = collect_selected_features_for_best_models(root, df_best)
+
+    # sauvegarde “long format” (1 ligne = 1 feature sélectionnée pour 1 patient)
+    feat_long_csv = out_dir / "selected_features_best_model_per_patient_long.csv"
+    df_feat_long.to_csv(feat_long_csv, index=False)
+    print(f"[OK] Selected features (long) saved -> {feat_long_csv}")
+
+    # barplot fréquence globale (combien de patients sélectionnent chaque feature)
+    plot_selected_feature_frequencies(
+        df_feat_long,
+        out_dir,
+        title="Selected feature frequency across patients\n(best model per patient)",
+        top_n=None,         # mets un int si tu veux limiter (ex: 40)
+        rotate_xticks=90,
+    )
+
 
 
     # ------------------------------------------------------
